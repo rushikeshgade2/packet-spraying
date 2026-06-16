@@ -10,8 +10,8 @@ flows in data-centre networks.
 
 ```bash
 # Clone the repo
-git clone https://github.com/grushikesh25/packet-sparying.git
-cd packet-sparying
+git clone https://github.com/rushikeshgade2/packet-spraying.git
+cd packet-spraying
 
 # Run everything (setup + simulate + plots)
 bash run.sh
