@@ -1,0 +1,24 @@
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+def build(bld):
+    module = bld.create_ns3_module(
+        'spray-routing',
+        ['core', 'network', 'internet', 'point-to-point', 'applications', 'flow-monitor']
+    )
+    module.source = [
+        'model/elephant-tag.cc',
+        'model/spray-routing.cc',
+        'helper/spray-routing-helper.cc',
+    ]
+
+    headers = bld(features='ns3header')
+    headers.module = 'spray-routing'
+    headers.source = [
+        'model/elephant-tag.h',
+        'model/spray-routing.h',
+        'helper/spray-routing-helper.h',
+    ]
+
+    if bld.env.ENABLE_TESTS:
+        module_test = bld.create_ns3_module_test_library('spray-routing')
+        module_test.source = ['test/spray-routing-test-suite.cc']
