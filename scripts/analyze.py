@@ -78,7 +78,12 @@ def parse_flowmon(xml_path: str) -> list[dict]:
             fct_s = duration_s  # approximation: FCT ≈ last_rx - first_tx
 
             meta = flows_meta.get(fid, {})
-            is_elephant = rx_bytes >= ELEPHANT_BYTES
+            # Elephant = TCP bulk transfer (>= 10 MB). Mouse = UDP.
+            # TCP ACK-return flows are neither -- skip them.
+            proto = meta.get("proto", 0)
+            is_elephant = (proto == 6 and rx_bytes >= 10_000_000)
+            if proto == 6 and not is_elephant:
+                continue
 
             records.append({
                 "flow_id":     fid,

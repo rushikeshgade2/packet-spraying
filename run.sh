@@ -102,8 +102,9 @@ banner "Step 4/6 — Copying simulation scripts"
 
 cp "${REPO_DIR}/scratch/fat-tree-simulation.cc"   "${NS3_DIR}/scratch/"
 cp "${REPO_DIR}/scratch/spine-leaf-simulation.cc" "${NS3_DIR}/scratch/"
-mkdir -p "${NS3_DIR}/results"
-ln -sfn "${RESULTS}" "${NS3_DIR}/results" 2>/dev/null || true
+mkdir -p "${RESULTS}"
+rm -rf "${NS3_DIR}/results"
+ln -sfnT "${RESULTS}" "${NS3_DIR}/results"
 mkdir -p "${RESULTS}"
 success "Scripts copied to NS-3 scratch/"
 

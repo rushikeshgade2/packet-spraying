@@ -140,7 +140,7 @@ BuildSpineLeaf (uint32_t numSpine, uint32_t numLeaf, uint32_t hostsPerLeaf,
 
     for (uint32_t s = 0; s < numSpine; ++s)
         for (uint32_t l = 0; l < numLeaf; ++l) {
-            auto [sA, lA] = MakeLink (sl.spine[s], sl.leaf[l], "10Gbps", "5us", addrHelper);
+            auto [sA, lA] = MakeLink (sl.spine[s], sl.leaf[l], "1Gbps", "5us", addrHelper);
             spineLeafAddr[s][l] = {sA, lA};
         }
 
@@ -172,25 +172,29 @@ BuildSpineLeaf (uint32_t numSpine, uint32_t numLeaf, uint32_t hostsPerLeaf,
             Ptr<SprayRouting> sr = DynamicCast<SprayRouting>(
                 sl.leaf[l]->GetObject<Ipv4>()->GetRoutingProtocol());
 
-            // Local host routes
+            // Local host routes.
+            // NOTE: spine<->leaf links were created first, so on a leaf the
+            // SPINE uplinks occupy ifaces 1..numSpine and the HOST links
+            // occupy numSpine+1..numSpine+hostsPerLeaf.
             for (uint32_t h = 0; h < hostsPerLeaf; ++h)
                 sr->AddRoute (sl.hostAddr[l][h], Ipv4Mask("255.255.255.255"),
-                              sl.hostAddr[l][h], 1 + h);
+                              sl.hostAddr[l][h], 1 + numSpine + h);
 
             // Default: spray across all spine switches (ECMP set)
-            uint32_t baseIface = 1 + hostsPerLeaf;
             for (uint32_t s = 0; s < numSpine; ++s)
                 sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                              spineLeafAddr[s][l].first, baseIface + s);
+                              spineLeafAddr[s][l].first, 1 + s);
         }
 
         // Spine switches: default to each leaf
         for (uint32_t s = 0; s < numSpine; ++s) {
             Ptr<SprayRouting> sr = DynamicCast<SprayRouting>(
                 sl.spine[s]->GetObject<Ipv4>()->GetRoutingProtocol());
+            // Host-specific routes DOWN to the correct leaf (iface 1+l faces leaf l)
             for (uint32_t l = 0; l < numLeaf; ++l)
-                sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                              spineLeafAddr[s][l].second, 1 + l);
+                for (uint32_t h = 0; h < hostsPerLeaf; ++h)
+                    sr->AddRoute (sl.hostAddr[l][h], Ipv4Mask("255.255.255.255"),
+                                  spineLeafAddr[s][l].second, 1 + l);
         }
 
     } else {
@@ -210,20 +214,22 @@ BuildSpineLeaf (uint32_t numSpine, uint32_t numLeaf, uint32_t hostsPerLeaf,
         // Leaf switches
         for (uint32_t l = 0; l < numLeaf; ++l) {
             auto sr = getStatic(sl.leaf[l]);
+            // Host links occupy ifaces numSpine+1.. (spine links came first)
             for (uint32_t h = 0; h < hostsPerLeaf; ++h)
-                sr->AddHostRouteTo (sl.hostAddr[l][h], sl.hostAddr[l][h], 1+h);
-            uint32_t baseIface = 1 + hostsPerLeaf;
+                sr->AddHostRouteTo (sl.hostAddr[l][h], sl.hostAddr[l][h],
+                                    1 + numSpine + h);
             for (uint32_t s = 0; s < numSpine; ++s)
                 sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                      spineLeafAddr[s][l].first, baseIface+s, s+1);
+                                      spineLeafAddr[s][l].first, 1 + s, s+1);
         }
 
         // Spine switches
         for (uint32_t s = 0; s < numSpine; ++s) {
             auto sr = getStatic(sl.spine[s]);
             for (uint32_t l = 0; l < numLeaf; ++l)
-                sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                      spineLeafAddr[s][l].second, 1+l, l+1);
+                for (uint32_t h = 0; h < hostsPerLeaf; ++h)
+                    sr->AddHostRouteTo (sl.hostAddr[l][h],
+                                        spineLeafAddr[s][l].second, 1 + l);
         }
     }
 
@@ -308,8 +314,11 @@ main (int argc, char *argv[])
         uint32_t dstIdx = (i + numHosts / 2) % numHosts;
         if (dstIdx == srcIdx) dstIdx = (srcIdx + 1) % numHosts;
 
-        BulkSendHelper bulk ("ns3::TcpSocketFactory",
-                              InetSocketAddress (hostAddrs[dstIdx], tcpPort));
+        // Mark elephant flows via IP TOS — SprayRouting treats TOS != 0
+        // as an elephant and sprays it per-packet across the ECMP set.
+        InetSocketAddress dstSock (hostAddrs[dstIdx], tcpPort);
+        dstSock.SetTos (0x10);
+        BulkSendHelper bulk ("ns3::TcpSocketFactory", dstSock);
         bulk.SetAttribute ("MaxBytes",  UintegerValue (50 * 1024 * 1024));  // 50 MB
         bulk.SetAttribute ("SendSize",  UintegerValue (1448));
 
