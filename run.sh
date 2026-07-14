@@ -115,7 +115,7 @@ cd "${NS3_DIR}"
 BUILD_MARKER=".packet_spray_built"
 if [ ! -f "${BUILD_MARKER}" ]; then
     info "Configuring NS-3..."
-    python3 ns3 configure --enable-examples --disable-python \
+    python3 ns3 configure --enable-examples --disable-python -- -DNS3_WARNINGS_AS_ERRORS=OFF \
         2>&1 | grep -E "^(--| |Modules|Build)" | head -20 || true
 
     info "Building NS-3 — please wait..."

@@ -1,0 +1,16 @@
+# Ignore NS-3
+ns-allinone-3.40/
+ns-allinone-3.40.tar.bz2
+
+# Results
+results/
+
+# Zip archives
+*.zip
+
+# Backup files
+*.save
+
+# Python cache
+__pycache__/
+*.pyc

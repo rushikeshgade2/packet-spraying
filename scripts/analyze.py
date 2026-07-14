@@ -68,9 +68,9 @@ def parse_flowmon(xml_path: str) -> list[dict]:
             lost    = int(flow.get("lostPackets",0))
 
             # Timestamps in nanoseconds
-            t_first_tx = int(flow.get("timeFirstTxPacket", "0").replace("+","").replace("ns",""))
-            t_last_rx  = int(flow.get("timeLastRxPacket",  "0").replace("+","").replace("ns",""))
-            delay_sum_ns = int(flow.get("delaySum", "0ns").replace("+","").replace("ns",""))
+            t_first_tx = float(flow.get("timeFirstTxPacket", "0").replace("+","").replace("ns",""))
+            t_last_rx  = float(flow.get("timeLastRxPacket",  "0").replace("+","").replace("ns",""))
+            delay_sum_ns = float(flow.get("delaySum", "0ns").replace("+","").replace("ns",""))
 
             duration_s = (t_last_rx - t_first_tx) / 1e9
             tput_mbps  = (rx_bytes * 8.0 / 1e6 / duration_s) if duration_s > 0 else 0.0

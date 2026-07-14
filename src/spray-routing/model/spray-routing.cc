@@ -151,7 +151,7 @@ SprayRouting::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
 
     // ── Local delivery ───────────────────────────────────────────────
     if (IsLocalAddress (dest)) {
-        lcb (p, header, idev);
+        lcb (p, header, m_ipv4->GetInterfaceForDevice (idev));
         return true;
     }
 
