@@ -183,7 +183,7 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
             for (uint32_t j = 0; j < half; ++j) {
                 uint32_t c = a * half + j;
                 auto [coreAddr, aggAddr] =
-                    MakeLink (ft.core[c], ft.agg[p][a], "10Gbps", "5us", addrHelper);
+                    MakeLink (ft.core[c], ft.agg[p][a], "1Gbps", "5us", addrHelper);
                 coreAggAddr[c][p] = {coreAddr, aggAddr};
             }
         }
@@ -199,7 +199,7 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
         for (uint32_t a = 0; a < half; ++a)
             for (uint32_t e = 0; e < half; ++e) {
                 auto [aggA, edgeA] =
-                    MakeLink (ft.agg[p][a], ft.edge[p][e], "10Gbps", "5us", addrHelper);
+                    MakeLink (ft.agg[p][a], ft.edge[p][e], "1Gbps", "5us", addrHelper);
                 aggEdgeAddr[p][a][e] = {aggA, edgeA};
             }
 
@@ -234,6 +234,9 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
                 }
 
         // Each edge switch
+        // NOTE: links were created in the order core<->agg, agg<->edge,
+        // edge<->host.  So on an edge switch the AGG uplinks occupy
+        // interfaces 1..half and the HOST links occupy half+1..2*half.
         for (uint32_t p = 0; p < k; ++p)
             for (uint32_t e = 0; e < half; ++e) {
                 Ptr<SprayRouting> sr = DynamicCast<SprayRouting>(
@@ -243,16 +246,14 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
                 for (uint32_t h = 0; h < half; ++h) {
                     Ipv4Address hostIp = ft.hostAddr[p][e][h];
                     sr->AddRoute (hostIp, Ipv4Mask("255.255.255.255"),
-                                  hostIp, 1 + h /* iface offset per host */);
+                                  hostIp, 1 + half + h /* host ifaces come after agg */);
                 }
 
-                // Routes to all other destinations: via each agg switch (ECMP set)
-                // agg switches connect on interfaces after host links
-                uint32_t baseIface = 1 + half; // 1=mgmt, 1..half=hosts, half+1..=agg uplinks
+                // Upward routes to everything else: via each agg switch (ECMP set)
                 for (uint32_t a = 0; a < half; ++a) {
                     Ipv4Address aggGw = aggEdgeAddr[p][a][e].first; // agg side addr
                     sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                                  aggGw, baseIface + a);
+                                  aggGw, 1 + a /* agg uplinks are ifaces 1..half */);
                 }
             }
 
@@ -262,19 +263,23 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
                 Ptr<SprayRouting> sr = DynamicCast<SprayRouting>(
                     ft.agg[p][a]->GetObject<Ipv4>()->GetRoutingProtocol());
 
-                // Routes to edge switches in its own pod (per-edge subnet)
+                // Host-specific routes DOWN to each edge switch in this pod.
+                // NOTE: core<->agg links were created first, so on an agg
+                // switch the CORE uplinks occupy ifaces 1..half and the EDGE
+                // links occupy half+1..2*half.
                 for (uint32_t e = 0; e < half; ++e) {
                     Ipv4Address edgeGw = aggEdgeAddr[p][a][e].second;
-                    sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                                  edgeGw, 1 + e);
+                    for (uint32_t h = 0; h < half; ++h)
+                        sr->AddRoute (ft.hostAddr[p][e][h],
+                                      Ipv4Mask("255.255.255.255"),
+                                      edgeGw, 1 + half + e);
                 }
-                // Default routes to all core switches (ECMP — one per core group)
-                uint32_t baseIface = 1 + half;
+                // Default routes UP to all core switches (ECMP spray set)
                 for (uint32_t j = 0; j < half; ++j) {
                     uint32_t c = a * half + j;
                     Ipv4Address coreGw = coreAggAddr[c][p].first;
                     sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                                  coreGw, baseIface + j);
+                                  coreGw, 1 + j);
                 }
             }
 
@@ -283,10 +288,14 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
             Ptr<SprayRouting> sr = DynamicCast<SprayRouting>(
                 ft.core[c]->GetObject<Ipv4>()->GetRoutingProtocol());
 
+            // Host-specific routes DOWN into each pod (core iface 1+p faces pod p)
             for (uint32_t p = 0; p < k; ++p) {
                 Ipv4Address aggGw = coreAggAddr[c][p].second;
-                sr->AddRoute (Ipv4Address("0.0.0.0"), Ipv4Mask("0.0.0.0"),
-                              aggGw, 1 + p);
+                for (uint32_t e = 0; e < half; ++e)
+                    for (uint32_t h = 0; h < half; ++h)
+                        sr->AddRoute (ft.hostAddr[p][e][h],
+                                      Ipv4Mask("255.255.255.255"),
+                                      aggGw, 1 + p);
             }
         }
     } else {
@@ -309,27 +318,31 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
         for (uint32_t p = 0; p < k; ++p)
             for (uint32_t e = 0; e < half; ++e) {
                 auto sr = getStatic(ft.edge[p][e]);
+                // Host links occupy ifaces half+1..2*half (agg links came first)
                 for (uint32_t h = 0; h < half; ++h)
-                    sr->AddHostRouteTo (ft.hostAddr[p][e][h], ft.hostAddr[p][e][h], 1+h);
-                // One default route per agg (NS-3 static routing picks first matching)
-                uint32_t baseIface = 1 + half;
+                    sr->AddHostRouteTo (ft.hostAddr[p][e][h], ft.hostAddr[p][e][h],
+                                        1 + half + h);
+                // One default route per agg (lowest metric wins)
                 for (uint32_t a = 0; a < half; ++a)
                     sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                          aggEdgeAddr[p][a][e].first, baseIface+a, a+1);
+                                          aggEdgeAddr[p][a][e].first, 1 + a, a+1);
             }
 
         // Agg switches
         for (uint32_t p = 0; p < k; ++p)
             for (uint32_t a = 0; a < half; ++a) {
                 auto sr = getStatic(ft.agg[p][a]);
+                // Host-specific routes DOWN (edge links are ifaces half+1..2*half)
                 for (uint32_t e = 0; e < half; ++e)
-                    sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                          aggEdgeAddr[p][a][e].second, 1+e, e+1);
-                uint32_t baseIface = 1+half;
+                    for (uint32_t h = 0; h < half; ++h)
+                        sr->AddHostRouteTo (ft.hostAddr[p][e][h],
+                                            aggEdgeAddr[p][a][e].second,
+                                            1 + half + e);
+                // Defaults UP to cores (core links are ifaces 1..half)
                 for (uint32_t j = 0; j < half; ++j) {
                     uint32_t c = a * half + j;
                     sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                          coreAggAddr[c][p].first, baseIface+j, j+1);
+                                          coreAggAddr[c][p].first, 1 + j, j+1);
                 }
             }
 
@@ -337,8 +350,10 @@ BuildFatTree (Ipv4AddressHelper &addrHelper, bool useSpray)
         for (uint32_t c = 0; c < half * half; ++c) {
             auto sr = getStatic(ft.core[c]);
             for (uint32_t p = 0; p < k; ++p)
-                sr->AddNetworkRouteTo(Ipv4Address("0.0.0.0"),Ipv4Mask("0.0.0.0"),
-                                      coreAggAddr[c][p].second, 1+p, p+1);
+                for (uint32_t e = 0; e < half; ++e)
+                    for (uint32_t h = 0; h < half; ++h)
+                        sr->AddHostRouteTo (ft.hostAddr[p][e][h],
+                                            coreAggAddr[c][p].second, 1 + p);
         }
     }
 
@@ -472,8 +487,11 @@ main (int argc, char *argv[])
         double start = rng->GetValue () * 0.5;
         uint64_t bytes = 50 * 1024 * 1024;   // 50 MB elephant flow
 
-        BulkSendHelper bulk ("ns3::TcpSocketFactory",
-                              InetSocketAddress (hostAddrs[dstIdx], port));
+        // Mark elephant flows via IP TOS — SprayRouting treats TOS != 0
+        // as an elephant and sprays it per-packet across the ECMP set.
+        InetSocketAddress dstSock (hostAddrs[dstIdx], port);
+        dstSock.SetTos (0x10);
+        BulkSendHelper bulk ("ns3::TcpSocketFactory", dstSock);
         bulk.SetAttribute ("MaxBytes", UintegerValue (bytes));
         bulk.SetAttribute ("SendSize", UintegerValue (1448));
 

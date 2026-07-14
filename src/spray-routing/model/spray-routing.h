@@ -5,8 +5,8 @@
 #include "ns3/ipv4-address.h"
 #include "ns3/ipv4.h"
 #include "ns3/output-stream-wrapper.h"
+#include "ns3/random-variable-stream.h"
 
-#include <map>
 #include <vector>
 
 namespace ns3 {
@@ -16,17 +16,18 @@ namespace ns3 {
  *
  * Routing policy
  * --------------
- *  - Mouse flows  : one nexthop is selected via a 5-tuple hash (stable per flow,
- *                   like ECMP).
- *  - Elephant flows: every packet is forwarded on the NEXT equal-cost route in a
- *                   round-robin schedule, spreading load across all paths.
+ *  - Mouse flows   : next hop chosen by a 5-TUPLE HASH (src IP, dst IP,
+ *                    src port, dst port, protocol).  Deterministic per flow,
+ *                    so every packet of a flow takes the same path and there
+ *                    is no reordering.  This is what real ECMP hardware does.
+ *  - Elephant flows: next hop chosen UNIFORMLY AT RANDOM, independently for
+ *                    each packet.  Spreads load evenly across all equal-cost
+ *                    paths in expectation, at the cost of packet reordering.
  *
- * Elephant detection: the presence of an ns3::ElephantTag on the packet.
+ * Randomness comes from ns-3's UniformRandomVariable, so runs are reproducible
+ * and controlled by RngSeedManager (the --seed argument).
  *
- * Route installation
- * ------------------
- * Routes are added explicitly via AddRoute().  Multiple calls with the same
- * (dest, mask) but different gateways create an ECMP set for that prefix.
+ * Elephant detection: IP TOS != 0, or presence of an ns3::ElephantTag.
  */
 class SprayRouting : public Ipv4RoutingProtocol
 {
@@ -35,22 +36,21 @@ public:
     SprayRouting ();
     ~SprayRouting () override;
 
-    // ── Route management ──────────────────────────────────────────────
     /**
-     * Add a unicast route.
-     * \param dest      Destination network address
-     * \param mask      Destination network mask
-     * \param gateway   Next-hop IP (use Ipv4Address("0.0.0.0") for directly connected)
-     * \param interface Outgoing interface index on this node
-     * \param metric    Route metric (lower = preferred; used to pick ECMP set)
+     * Add a unicast route.  Multiple calls with the same (dest, mask) and the
+     * same metric form an equal-cost (ECMP) set for that prefix.
      */
     void AddRoute (Ipv4Address dest, Ipv4Mask mask,
                    Ipv4Address gateway, uint32_t interface,
                    uint32_t metric = 1);
 
+    /** If true (default), only elephants are sprayed; mice always use the hash. */
     void SetMode (bool sprayElephantOnly) { m_sprayElephantOnly = sprayElephantOnly; }
 
-    // ── Ipv4RoutingProtocol interface ─────────────────────────────────
+    /** Fix the RNG stream so runs are reproducible. */
+    int64_t AssignStreams (int64_t stream);
+
+    // -- Ipv4RoutingProtocol interface --------------------------------
     Ptr<Ipv4Route> RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
                                 Ptr<NetDevice> oif,
                                 Socket::SocketErrno &sockerr) override;
@@ -79,22 +79,29 @@ private:
         uint32_t    metric;
     };
 
-    Ptr<Ipv4>               m_ipv4;
-    std::vector<RouteEntry> m_routes;
-    bool                    m_sprayElephantOnly{true};
+    /** The 5-tuple identifying a flow. */
+    struct FlowTuple {
+        Ipv4Address src;
+        Ipv4Address dst;
+        uint16_t    sport;
+        uint16_t    dport;
+        uint8_t     proto;
+    };
 
-    // Per-destination round-robin counter (used for spray)
-    mutable std::map<Ipv4Address, uint32_t> m_rrCounter;
+    Ptr<Ipv4>                  m_ipv4;
+    std::vector<RouteEntry>    m_routes;
+    bool                       m_sprayElephantOnly{true};
+    Ptr<UniformRandomVariable> m_rand;   // drives random spray
 
-    // ── Internal helpers ──────────────────────────────────────────────
-    Ptr<Ipv4Route> LookupRoute (Ipv4Address dest, bool isElephant,
-                                Ptr<NetDevice> oif = nullptr) const;
+    Ptr<Ipv4Route> LookupRoute (const FlowTuple &ft, bool isElephant) const;
+    bool           IsLocalAddress (Ipv4Address addr) const;
 
-    bool IsLocalAddress (Ipv4Address addr) const;
-    Ipv4Address GetLocalSourceAddress (uint32_t iface) const;
+    /** Pull src/dst ports from the transport header (0 if unavailable). */
+    static void     ExtractPorts (Ptr<const Packet> p, uint8_t proto,
+                                  uint16_t &sport, uint16_t &dport);
 
-    static uint32_t HashFlow (Ipv4Address src, Ipv4Address dst,
-                               uint16_t sport, uint16_t dport);
+    /** FNV-1a over the 5-tuple, plus a final avalanche mix. */
+    static uint32_t HashFlow (const FlowTuple &ft);
 };
 
 } // namespace ns3
