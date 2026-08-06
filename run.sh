@@ -145,19 +145,19 @@ run_sim() {
 
 run_sim "Fat-Tree ECMP" \
     "fat-tree-simulation" \
-    "--k=4 --routing=ecmp --simTime=5 --elephants=10 --mice=40 --seed=1 --flowmon=true"
+    "--k=4 --routing=ecmp --simTime=5 --elephants=40 --mice=4 --seed=1 --flowmon=true"
 
 run_sim "Fat-Tree Packet Spray" \
     "fat-tree-simulation" \
-    "--k=4 --routing=spray --simTime=5 --elephants=10 --mice=40 --seed=1 --flowmon=true"
+    "--k=4 --routing=spray --simTime=5 --elephants=40 --mice=40 --seed=1 --flowmon=true"
 
 run_sim "Spine-Leaf ECMP" \
     "spine-leaf-simulation" \
-    "--numSpine=4 --numLeaf=8 --hostsPerLeaf=4 --routing=ecmp --simTime=5 --elephants=10 --mice=40 --seed=1 --flowmon=true"
+    "--numSpine=4 --numLeaf=8 --hostsPerLeaf=4 --routing=ecmp --simTime=5 --elephants=40 --mice=40 --seed=1 --flowmon=true"
 
 run_sim "Spine-Leaf Packet Spray" \
     "spine-leaf-simulation" \
-    "--numSpine=4 --numLeaf=8 --hostsPerLeaf=4 --routing=spray --simTime=5 --elephants=10 --mice=40 --seed=1 --flowmon=true"
+    "--numSpine=4 --numLeaf=8 --hostsPerLeaf=4--routing=spray --simTime=5 --elephants=40 --mice=40 --seed=1 --flowmon=true"
 
 # ── Analyse & plot ────────────────────────────────────────────────────
 cd "${REPO_DIR}"

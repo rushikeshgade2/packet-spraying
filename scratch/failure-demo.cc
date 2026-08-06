@@ -1,6 +1,18 @@
 /**
- * spine-leaf-simulation.cc
- * ========================
+ * failure-demo.cc
+ * ===============
+ *
+ * LINK/SWITCH FAILURE DEMONSTRATION
+ * Same Spine-Leaf topology as spine-leaf-simulation.cc, but with the
+ * ability to KILL a spine switch (or a single leaf-spine link) part way
+ * through the run, to show that traffic reroutes onto surviving paths.
+ *
+ *   --failSpine=N     index of spine switch to kill (-1 = no failure)
+ *   --failTime=T      when to kill it (seconds)
+ *
+ * Example:
+ *   ./ns3 run "failure-demo --routing=spray --failSpine=-1"   # healthy
+ *   ./ns3 run "failure-demo --routing=spray --failSpine=0"    # spine 0 dies
  * NS-3 simulation of a Spine-Leaf (2-tier Clos) data-centre network
  * comparing ECMP vs Packet Spraying for elephant flow load balancing.
  *
@@ -51,7 +63,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE ("SpineLeafSimulation");
+NS_LOG_COMPONENT_DEFINE ("FailureDemo");
 
 // ─────────────────────────────────────────────────────────────────────
 //  Address pool helper
@@ -140,7 +152,7 @@ BuildSpineLeaf (uint32_t numSpine, uint32_t numLeaf, uint32_t hostsPerLeaf,
 
     for (uint32_t s = 0; s < numSpine; ++s)
         for (uint32_t l = 0; l < numLeaf; ++l) {
-            auto [sA, lA] = MakeLink (sl.spine[s], sl.leaf[l], "1Gbps", "5us", addrHelper);
+            auto [sA, lA] = MakeLink (sl.spine[s], sl.leaf[l], "10Gbps", "5us", addrHelper);
             spineLeafAddr[s][l] = {sA, lA};
         }
 
@@ -236,6 +248,74 @@ BuildSpineLeaf (uint32_t numSpine, uint32_t numLeaf, uint32_t hostsPerLeaf,
     return sl;
 }
 
+
+
+// ─────────────────────────────────────────────────────────────────────
+//  LIVE THROUGHPUT SAMPLER
+//  Prints aggregate received-bytes each interval so you can watch the
+//  network react to the failure while the simulation runs.
+// ─────────────────────────────────────────────────────────────────────
+static uint64_t g_lastRxBytes = 0;
+
+static void
+SampleThroughput (Ptr<FlowMonitor> fm, double interval)
+{
+    fm->CheckForLostPackets ();
+    uint64_t nowBytes = 0;
+    uint64_t lost     = 0;
+    for (auto &kv : fm->GetFlowStats ())
+    {
+        nowBytes += kv.second.rxBytes;
+        lost     += kv.second.lostPackets;
+    }
+    double mbps = (nowBytes - g_lastRxBytes) * 8.0 / interval / 1e6;
+    g_lastRxBytes = nowBytes;
+
+    NS_LOG_UNCOND ("  t=" << std::fixed << std::setprecision (1)
+                   << Simulator::Now ().GetSeconds () << "s"
+                   << "   aggregate = " << std::setw (8)
+                   << std::setprecision (1) << mbps << " Mbps"
+                   << "   cumulative lost pkts = " << lost);
+
+    Simulator::Schedule (Seconds (interval), &SampleThroughput, fm, interval);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  FAILURE INJECTION
+//  Bring down every link between spine[s] and all leaves.  This is what
+//  a whole spine switch dying looks like from the network's point of view.
+//  Each leaf's SprayRouting is notified (NotifyInterfaceDown) and removes
+//  that interface from its equal-cost set, so subsequent packets are
+//  routed only over the surviving spines.
+// ─────────────────────────────────────────────────────────────────────
+static void
+KillSpine (SpineLeaf *sl, uint32_t spineIdx, uint32_t numLeaf)
+{
+    NS_LOG_UNCOND ("\n*** FAILURE: spine " << spineIdx
+                   << " going DOWN at t=" << Simulator::Now ().GetSeconds ()
+                   << "s ***");
+
+    // Take down the spine's own interfaces
+    Ptr<Ipv4> spineIpv4 = sl->spine[spineIdx]->GetObject<Ipv4> ();
+    for (uint32_t i = 1; i < spineIpv4->GetNInterfaces (); ++i)
+    {
+        spineIpv4->SetDown (i);
+    }
+
+    // Take down the matching interface on every leaf.
+    // Leaf interface (1 + spineIdx) faces spine[spineIdx], because the
+    // spine<->leaf links were created before the leaf<->host links.
+    for (uint32_t l = 0; l < numLeaf; ++l)
+    {
+        Ptr<Ipv4> leafIpv4 = sl->leaf[l]->GetObject<Ipv4> ();
+        leafIpv4->SetDown (1 + spineIdx);
+        NS_LOG_UNCOND ("    leaf " << l << " : interface "
+                       << (1 + spineIdx) << " marked DOWN");
+    }
+
+    NS_LOG_UNCOND ("*** Traffic should now use the remaining spines ***\n");
+}
+
 // ─────────────────────────────────────────────────────────────────────
 //  main
 // ─────────────────────────────────────────────────────────────────────
@@ -247,9 +327,11 @@ main (int argc, char *argv[])
     uint32_t    hostsPerLeaf = 4;
     std::string routing      = "spray";
     double      simTime      = 5.0;
-    uint32_t    numElephant  = 50;
+    uint32_t    numElephant  = 10;
     uint32_t    numMice      = 40;
     uint32_t    seed         = 1;
+    int32_t     failSpine    = -1;    // -1 = no failure
+    double      failTime     = 2.0;   // when the spine dies
     bool        enablePcap   = false;
     bool        enableFM     = true;
 
@@ -264,6 +346,8 @@ main (int argc, char *argv[])
     cmd.AddValue ("seed",         "RNG seed / run number",       seed);
     cmd.AddValue ("pcap",         "Enable PCAP",                 enablePcap);
     cmd.AddValue ("flowmon",      "Enable FlowMonitor",          enableFM);
+    cmd.AddValue ("failSpine",    "Spine index to kill (-1=none)", failSpine);
+    cmd.AddValue ("failTime",     "Time (s) at which spine fails", failTime);
     cmd.Parse (argc, argv);
 
     RngSeedManager::SetSeed (seed);
@@ -271,7 +355,7 @@ main (int argc, char *argv[])
 
     bool useSpray = (routing == "spray");
 
-    NS_LOG_UNCOND ("[SpineLeaf] spine=" << numSpine
+    NS_LOG_UNCOND ("[FailureDemo] spine=" << numSpine
         << "  leaf=" << numLeaf
         << "  hostsPerLeaf=" << hostsPerLeaf
         << "  routing=" << routing
@@ -308,11 +392,24 @@ main (int argc, char *argv[])
     rng->SetAttribute ("Min", DoubleValue (0.0));
     rng->SetAttribute ("Max", DoubleValue (1.0));
 
+    // ── Random traffic matrix ─────────────────────────────────────────
+    // Source and destination hosts are drawn UNIFORMLY AT RANDOM for every
+    // flow, so each --seed produces a genuinely different traffic pattern.
+    Ptr<UniformRandomVariable> hostRng = CreateObject<UniformRandomVariable> ();
+    hostRng->SetAttribute ("Min", DoubleValue (0));
+    hostRng->SetAttribute ("Max", DoubleValue (numHosts - 1));
+
+    auto pickPair = [&] (uint32_t &s, uint32_t &d) {
+        s = hostRng->GetInteger ();
+        do {
+            d = hostRng->GetInteger ();
+        } while (d == s);          // never send a flow to itself
+    };
+
     uint16_t tcpPort = 5001;
     for (uint32_t i = 0; i < numElephant; ++i) {
-        uint32_t srcIdx = i % numHosts;
-        uint32_t dstIdx = (i + numHosts / 2) % numHosts;
-        if (dstIdx == srcIdx) dstIdx = (srcIdx + 1) % numHosts;
+        uint32_t srcIdx, dstIdx;
+        pickPair (srcIdx, dstIdx);
 
         // Mark elephant flows via IP TOS — SprayRouting treats TOS != 0
         // as an elephant and sprays it per-packet across the ECMP set.
@@ -335,9 +432,8 @@ main (int argc, char *argv[])
     // ── Mouse flows ───────────────────────────────────────────────────
     uint16_t udpPort = 6001;
     for (uint32_t i = 0; i < numMice; ++i) {
-        uint32_t srcIdx = (i * 7 + 3) % numHosts;
-        uint32_t dstIdx = (i * 11 + 5) % numHosts;
-        if (dstIdx == srcIdx) dstIdx = (srcIdx + 1) % numHosts;
+        uint32_t srcIdx, dstIdx;
+        pickPair (srcIdx, dstIdx);
 
         OnOffHelper onoff ("ns3::UdpSocketFactory",
                             InetSocketAddress (hostAddrs[dstIdx], udpPort));
@@ -370,15 +466,35 @@ main (int argc, char *argv[])
     }
 
     // ── Run ───────────────────────────────────────────────────────────
+    // ── Live throughput sampling ──────────────────────────────────────
+    if (enableFM && flowMonitor)
+    {
+        NS_LOG_UNCOND ("\n--- Live aggregate throughput (0.5s samples) ---");
+        Simulator::Schedule (Seconds (0.5), &SampleThroughput, flowMonitor, 0.5);
+    }
+
+    // ── Schedule the spine failure (if requested) ─────────────────────
+    if (failSpine >= 0 && (uint32_t) failSpine < numSpine)
+    {
+        NS_LOG_UNCOND ("[FailureDemo] spine " << failSpine
+                       << " will FAIL at t=" << failTime << "s");
+        Simulator::Schedule (Seconds (failTime), &KillSpine,
+                             &sl, (uint32_t) failSpine, numLeaf);
+    }
+    else
+    {
+        NS_LOG_UNCOND ("[FailureDemo] no failure scheduled (healthy network)");
+    }
+
     Simulator::Stop (Seconds (simTime + 1.0));
     Simulator::Run  ();
 
     // ── Output ────────────────────────────────────────────────────────
     if (enableFM && flowMonitor) {
-        std::string xmlFile = "results/spine-leaf-" + routing + "-flowmon.xml";
+        std::string xmlFile = "results/failure-demo-" + routing + "-flowmon.xml";
         flowMonitor->CheckForLostPackets ();
         flowMonitor->SerializeToXmlFile  (xmlFile, true, true);
-        NS_LOG_UNCOND ("[SpineLeaf] FlowMonitor saved to " << xmlFile);
+        NS_LOG_UNCOND ("[FailureDemo] FlowMonitor saved to " << xmlFile);
 
         Ptr<Ipv4FlowClassifier> classifier =
             DynamicCast<Ipv4FlowClassifier> (fmHelper.GetClassifier ());
