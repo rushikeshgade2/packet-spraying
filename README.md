@@ -95,9 +95,7 @@ congestion on a single network path when standard **ECMP routing** is used.
 ECMP selects one path per flow using a 5-tuple hash — if two elephant flows
 hash to the same path, that path saturates while others stay idle.
 
-**Packet Spraying** solves this by sending each *packet* of an elephant flow on
-the *next available equal-cost path* (round-robin), spreading the load across
-all paths simultaneously.
+**Packet Spraying** sends each packet of an elephant flow across the available equal-cost paths using uniform random path selection. For every packet, one of the equal-cost paths is selected independently using NS-3's UniformRandomVariable, distributing traffic statistically evenly across all available paths.
 
 ---
 
