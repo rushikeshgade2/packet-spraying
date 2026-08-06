@@ -6,7 +6,28 @@ flows in data-centre networks.
 
 ---
 
-## For Evaluators — Run in One Command
+## Run in WSL+VS Code(Windows)
+1.Install WSL :
+#powershell
+wsl --install -d Ubuntu
+
+
+2. Install VS Code:
+on Windows, then add the WSL extension: open VS Code → Extensions (Ctrl+Shift+X) → search WSL (by Microsoft) → Install.
+
+Step 1 — Open a WSL terminal
+Launch Ubuntu from the Start menu, or in VS Code press Ctrl+Shift+P → WSL: Connect to WSL, then open a terminal with Ctrl+`. You should see a Linux prompt such as you@machine:~$.
+
+Step 2 — Put the project on the Linux filesystem
+Important: keep the project under your Linux home (~), not under /mnt/c/. Building on the Windows drive is far slower and can cause permission errors.
+
+If you have the ZIP, copy it in and unzip (adjust the Windows path to yours):
+cd ~
+mkdir -p projects && cd projects
+cp "/mnt/c/Users/YOUR_WINDOWS_USERNAME/Downloads/packet-spraying-main.zip" .
+unzip packet-spraying-main.zip
+cd packet-spraying-main
+
 
 ```bash
 # Clone the repo
@@ -16,6 +37,7 @@ cd packet-spraying
 # Run everything (setup + simulate + plots)
 bash run.sh
 ```
+
 
 That single script:
 1. Checks your system has `g++`, `python3`, `cmake`, `ninja`, `wget`
@@ -42,6 +64,9 @@ sudo apt update
 sudo apt install -y g++ python3 cmake ninja-build wget tar
 pip3 install matplotlib numpy
 ```
+If pip3 refuses with an "externally-managed-environment" error (Ubuntu 23.04+ / Debian 12+), install the packages through apt instead:
+
+sudo apt install -y python3-matplotlib python3-numpy
 
 ### Output Files
 
@@ -167,7 +192,8 @@ RouteOutput() [called for every outgoing packet]:
   ├── Filter to lowest-metric routes → ECMP candidate set
   │
   ├── Packet has ElephantTag?
-  │     YES → index = round_robin_counter[dst]++  % |set|   ← SPRAY
+  │     YES → index = UniformRandomVariable.GetInteger(0, |set| - 1)
+       ← SPRAY
   │     NO  → index = hash(dst)                  % |set|   ← ECMP
   │
   └── Return Ipv4Route with selected nexthop + interface
@@ -228,14 +254,3 @@ Same structure as Fat-Tree simulation, adapted for Spine-Leaf topology.
 ```
 
 ---
-
-## References
-
-1. Al-Fares, M., Loukissas, A., & Vahdat, A. (2008). *A scalable, commodity
-   data center network architecture.* ACM SIGCOMM.
-2. Dixit, A., et al. (2013). *Is it time for networks to change?* HotNets.
-3. Cao, J., et al. (2013). *Per-packet load-balanced, low-latency routing for
-   Clos-based data center networks.* CoNEXT.
-4. Benson, T., Akella, A., & Maltz, D. A. (2010). *Network traffic
-   characteristics of data centers in the wild.* IMC.
-5. NS-3 Documentation: https://www.nsnam.org/documentation/

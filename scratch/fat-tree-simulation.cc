@@ -478,11 +478,20 @@ main (int argc, char *argv[])
     rng->SetAttribute ("Min", DoubleValue (0.0));
     rng->SetAttribute ("Max", DoubleValue (1.0));
 
+    // Random traffic matrix: each --seed gives a different set of host pairs.
+    Ptr<UniformRandomVariable> hostRng = CreateObject<UniformRandomVariable> ();
+    hostRng->SetAttribute ("Min", DoubleValue (0));
+    hostRng->SetAttribute ("Max", DoubleValue (numHosts - 1));
+
+    auto pickPair = [&] (uint32_t &s, uint32_t &d) {
+        s = hostRng->GetInteger ();
+        do { d = hostRng->GetInteger (); } while (d == s);
+    };
+    
     uint16_t port = 5001;
     for (uint32_t i = 0; i < numElephant; ++i) {
-        uint32_t srcIdx = i % numHosts;
-        uint32_t dstIdx = (i + 1 + (i % (numHosts - 1))) % numHosts;
-        if (srcIdx == dstIdx) dstIdx = (dstIdx + 1) % numHosts;
+        uint32_t srcIdx, dstIdx;
+        pickPair (srcIdx, dstIdx);
 
         double start = rng->GetValue () * 0.5;
         uint64_t bytes = 50 * 1024 * 1024;   // 50 MB elephant flow
@@ -508,11 +517,10 @@ main (int argc, char *argv[])
     }
 
     // ── Mouse flows (OnOff UDP) ───────────────────────────────────────
-    uint16_t udpPort = 6001;
-    for (uint32_t i = 0; i < numMice; ++i) {
-        uint32_t srcIdx = (i * 3 + 2)  % numHosts;
-        uint32_t dstIdx = (i * 5 + 7)  % numHosts;
-        if (srcIdx == dstIdx) dstIdx = (dstIdx + 1) % numHosts;
+     uint16_t udpPort = 6001;
+     for (uint32_t i = 0; i < numMice; ++i) {
+        uint32_t srcIdx, dstIdx;
+        pickPair (srcIdx, dstIdx);
 
         double start = rng->GetValue () * 1.0;
 

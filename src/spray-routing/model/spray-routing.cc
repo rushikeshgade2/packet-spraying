@@ -162,7 +162,8 @@ SprayRouting::LookupRoute (const FlowTuple &ft, bool isElephant) const
     std::vector<const RouteEntry *> ecmpSet;
     for (const auto *c : candidates)
     {
-        if (c->metric == minMetric)
+       if (c->metric == minMetric &&
+            m_downIfaces.find (c->interface) == m_downIfaces.end ())
         {
             ecmpSet.push_back (c);
         }
@@ -297,9 +298,15 @@ SprayRouting::IsLocalAddress (Ipv4Address addr) const
     }
     return false;
 }
+void SprayRouting::NotifyInterfaceUp (uint32_t iface)
+{
+    m_downIfaces.erase (iface);
+}
 
-void SprayRouting::NotifyInterfaceUp   (uint32_t)                       {}
-void SprayRouting::NotifyInterfaceDown (uint32_t)                       {}
+void SprayRouting::NotifyInterfaceDown (uint32_t iface)
+{
+    m_downIfaces.insert (iface);
+}                      
 void SprayRouting::NotifyAddAddress    (uint32_t, Ipv4InterfaceAddress) {}
 void SprayRouting::NotifyRemoveAddress (uint32_t, Ipv4InterfaceAddress) {}
 

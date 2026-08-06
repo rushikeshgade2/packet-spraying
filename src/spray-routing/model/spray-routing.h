@@ -1,5 +1,6 @@
 #ifndef SPRAY_ROUTING_H
 #define SPRAY_ROUTING_H
+#include <set>
 
 #include "ns3/ipv4-routing-protocol.h"
 #include "ns3/ipv4-address.h"
@@ -90,6 +91,7 @@ private:
 
     Ptr<Ipv4>                  m_ipv4;
     std::vector<RouteEntry>    m_routes;
+    std::set<uint32_t>         m_downIfaces; 
     bool                       m_sprayElephantOnly{true};
     Ptr<UniformRandomVariable> m_rand;   // drives random spray
 
