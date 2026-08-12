@@ -13,7 +13,7 @@
  *
  *   Link speeds:
  *     leaf -> host  : 1  Gbps, 10  us
- *     spine -> leaf : 10 Gbps, 5   us
+ *     spine -> leaf : 1 Gbps, 5   us
  *
  * Command-line options
  * --------------------
@@ -247,7 +247,7 @@ main (int argc, char *argv[])
     uint32_t    hostsPerLeaf = 4;
     std::string routing      = "spray";
     double      simTime      = 5.0;
-    uint32_t    numElephant  = 50;
+    uint32_t    numElephant  = 40;
     uint32_t    numMice      = 40;
     uint32_t    seed         = 1;
     bool        enablePcap   = false;

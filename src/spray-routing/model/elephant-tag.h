@@ -7,12 +7,14 @@
 namespace ns3 {
 
 /**
- * \brief Packet tag that marks a packet as belonging to an elephant flow.
+ * \brief Packet tag used to identify packets belonging to an elephant flow.
  *
- * Added by the source application when the flow size exceeds the
- * elephant threshold (default 1 MB).  The SprayRouting module reads
- * this tag to decide whether to spray the packet across all equal-cost
- * paths (elephant) or pick a single path via hash (mouse).
+ * The simulation marks elephant traffic using IP TOS = 0x10.
+ * ElephantTag provides an additional mechanism for identifying elephant
+ * packets when required by the routing module.
+ *
+ * SprayRouting uses the elephant indication to select Packet Spraying;
+ * non-elephant packets use conventional flow-based ECMP.
  */
 class ElephantTag : public Tag
 {
