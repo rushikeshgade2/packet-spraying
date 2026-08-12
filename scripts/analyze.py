@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 # Elephant threshold: flows with rxBytes >= this are classified as elephant
-ELEPHANT_BYTES = 1_000_000   # 1 MB
+ELEPHANT_BYTES = 10_000_000   # 10 MB
 
 PALETTE = {
     "Fat-Tree ECMP":      "#E74C3C",
