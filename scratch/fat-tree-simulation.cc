@@ -10,10 +10,7 @@
  *   k pods, each with k/2 aggregation and k/2 edge switches
  *   (k/2)^2 = 4 core switches
  *
- *   Link speeds:
- *     edge  -> host : 1  Gbps, 10  us RTT
- *     agg   -> edge : 10 Gbps, 5   us
- *     core  -> agg  : 10 Gbps, 5   us
+ 
  *
  * Command-line options
  * --------------------
