@@ -63,7 +63,7 @@ bash run.sh
 |-------------|---------|
 | OS | Ubuntu 20.04 / 22.04 / Debian (Linux) |
 | C++ compiler | g++ 9+ |
-| Python | 3.8+ |
+| Python | 3.0+ |
 | NS-3 | 3.40 (downloaded automatically) |
 | RAM | ≥ 4 GB |
 | Disk | ≥ 2 GB free |
@@ -73,12 +73,18 @@ Install dependencies (if needed):
 sudo apt update
 sudo apt install -y g++ python3 cmake ninja-build wget tar unzip
 pip3 install matplotlib numpy
+sudo apt install bzip2
 ```
 
 If `pip3` refuses with an *"externally-managed-environment"* error
 (Ubuntu 23.04+ / Debian 12+), install through apt instead:
 ```bash
 sudo apt install -y python3-matplotlib python3-numpy
+```
+```
+After installing dependencies and after unzip run this command 
+chmod +x run.sh
+bash run.sh
 ```
 
 ---
