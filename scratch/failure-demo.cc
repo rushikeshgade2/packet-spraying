@@ -25,7 +25,7 @@
  *
  *   Link speeds:
  *     leaf -> host  : 1  Gbps, 10  us
- *     spine -> leaf : 10 Gbps, 5   us
+ *     
  *
  * Command-line options
  * --------------------
